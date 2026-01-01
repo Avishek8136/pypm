@@ -29,43 +29,32 @@ class PyPMCLI:
             print(f"\nCreate it with: pypm create {env_name}")
             return False
         
-        activation_cmd = self.env_manager.get_activation_command(env_name)
+        env_path = self.env_manager.get_env_path(env_name)
         
-        print(f"\n{'='*60}")
-        print(f"  PyPM Environment: {env_name}")
-        print(f"{'='*60}")
-        print(f"\n📋 To activate this environment, run:\n")
+        print(f"\n{'='*70}")
+        print(f"  To activate the '{env_name}' environment, run:")
+        print(f"{'='*70}\n")
         
         if sys.platform == 'win32':
-            print(f"   {activation_cmd}")
-            print(f"\n   Or simply:")
-            print(f"   .\\{activation_cmd}")
-        else:
-            print(f"   {activation_cmd}")
-        
-        print(f"\n{'='*60}")
-        print(f"💡 After activation:")
-        print(f"   • Use 'pip install <package>' to install packages")
-        print(f"   • Packages are stored centrally (no duplication!)")
-        print(f"   • Use 'deactivate' to exit the environment")
-        print(f"{'='*60}\n")
-        
-        # Try to activate automatically using subprocess
-        if sys.platform == 'win32':
-            env_path = self.env_manager.get_env_path(env_name)
-            activate_script = env_path / 'Scripts' / 'Activate.ps1'
+            # PowerShell
+            activate_ps1 = env_path / 'Scripts' / 'Activate.ps1'
+            # CMD
+            activate_bat = env_path / 'Scripts' / 'activate.bat'
             
-            print("🚀 Attempting to activate environment...\n")
-            try:
-                # Launch new PowerShell window with activation
-                subprocess.Popen(
-                    ['powershell', '-NoExit', '-ExecutionPolicy', 'Bypass', 
-                     '-Command', f'& "{activate_script}"'],
-                    creationflags=subprocess.CREATE_NEW_CONSOLE
-                )
-                print("✓ New PowerShell window opened with activated environment")
-            except Exception as e:
-                print(f"⚠ Could not auto-activate. Please run the command above manually.")
+            print(f"  PowerShell:")
+            print(f"  {activate_ps1}\n")
+            print(f"  OR\n")
+            print(f"  CMD:")
+            print(f"  {activate_bat}\n")
+        else:
+            activate_sh = env_path / 'bin' / 'activate'
+            print(f"  source {activate_sh}\n")
+        
+        print(f"{'='*70}")
+        print(f"  After activation, use: pip install <package>")
+        print(f"  Packages will be stored centrally (no duplication!)")
+        print(f"  To exit: deactivate")
+        print(f"{'='*70}\n")
         
         return True
     
