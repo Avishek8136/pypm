@@ -7,7 +7,7 @@ long_description = (this_directory / "README.md").read_text(encoding='utf-8')
 
 setup(
     name='pypm-manager',
-    version='2.0.1',
+    version='2.0.2',
     author='Avishek',
     author_email='avishek8136@github.com',
     description='Python package manager with centralized storage and zero duplication - works like venv + pip',

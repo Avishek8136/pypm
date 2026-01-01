@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pypm-manager"
-version = "2.0.1"
+version = "2.0.2"
 description = "Python package manager with centralized storage and zero duplication - works like venv + pip"
 readme = "README.md"
 authors = [

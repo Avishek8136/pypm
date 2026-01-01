@@ -116,10 +116,10 @@ class EnvironmentManager:
         activate_ps1 = env_path / 'Scripts' / 'Activate.ps1'
         if activate_ps1.exists():
             # Read original
-            with open(activate_ps1, 'r') as f:
+            with open(activate_ps1, 'r', encoding='utf-8') as f:
                 original_content = f.read()
             
-            # Add PyPM customizations
+            # Add PyPM customizations BEFORE signature block
             pypm_additions = f'''
 # PyPM Customizations
 $env:PYPM_ENV = "{env_name}"
@@ -129,11 +129,21 @@ $env:PYTHONPATH = "{central_store}" + [IO.Path]::PathSeparator + $env:PYTHONPATH
 Write-Host "PyPM environment '{env_name}' activated" -ForegroundColor Green
 Write-Host "Central store: {central_store}" -ForegroundColor Cyan
 Write-Host "Use 'pip install <package>' to install packages" -ForegroundColor Yellow
-Write-Host "Use 'pypm deactivate' or 'deactivate' to deactivate" -ForegroundColor Yellow
+Write-Host "Use 'deactivate' to exit" -ForegroundColor Yellow
 '''
             
-            with open(activate_ps1, 'w') as f:
-                f.write(original_content + '\n' + pypm_additions)
+            # Find signature block (starts with "# SIG # Begin signature block")
+            sig_marker = "# SIG # Begin signature block"
+            if sig_marker in original_content:
+                # Insert before signature
+                parts = original_content.split(sig_marker)
+                modified_content = parts[0] + pypm_additions + '\n' + sig_marker + parts[1]
+            else:
+                # No signature, append at end
+                modified_content = original_content + '\n' + pypm_additions
+            
+            with open(activate_ps1, 'w', encoding='utf-8') as f:
+                f.write(modified_content)
         
         # CMD/Batch activation script
         activate_bat = env_path / 'Scripts' / 'activate.bat'
