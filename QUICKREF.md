@@ -1,248 +1,103 @@
 # PyPM Quick Reference
 
 ## Installation
-No installation needed! Pure Python, no dependencies.
-
-## CLI Commands Cheat Sheet
-
-### Package Management
 ```bash
-# Add package to central store
-python pypm.py add <name> <version> <path>
-
-# Remove package from store
-python pypm.py remove <name> <version>
-
-# List all packages
-python pypm.py list
-
-# Show store info
-python pypm.py info
+pip install pypm-manager
 ```
+
+## Workflow
+```bash
+1. pypm create myproject          # Create environment
+2. pypm activate myproject         # Shows activation command
+3. [Run activation command shown]  # Activate environment
+4. pypm install pandas numpy       # Install packages
+5. python myapp.py                 # Use environment
+6. deactivate                      # Deactivate when done
+```
+
+## CLI Commands
 
 ### Environment Management
 ```bash
-# Create environment
-python pypm.py create-env <name> [-d "description"]
-
-# Delete environment
-python pypm.py delete-env <name>
-
-# List all environments
-python pypm.py list-envs
-
-# Show environment details
-python pypm.py show-env <name>
+pypm create <name>         # Create new environment
+pypm activate <name>       # Show activation command
+pypm delete <name>         # Delete environment
+pypm list                  # List all environments
+pypm info <name>           # Show environment details
 ```
 
-### Package Installation
+### Package Installation (in activated environment)
 ```bash
-# Install package to environment
-python pypm.py install <env> <package> <version>
+pypm install <package>                    # Install latest version
+pypm install <package>==<version>         # Install specific version
+pypm install pkg1 pkg2 pkg3               # Install multiple packages
 
-# Uninstall package from environment
-python pypm.py uninstall <env> <package>
+# Examples
+pypm install requests==2.28.0
+pypm install pandas==2.1.0 numpy scikit-learn
 ```
 
-### Verification & Activation
+### Central Store
 ```bash
-# Verify environment has all packages
-python pypm.py verify <name>
-
-# Create activation script
-python pypm.py activate <name> [-o script.py]
+pypm store-info            # View central store statistics
 ```
 
-## Python API Quick Reference
+## Typical Workflow Examples
 
-```python
-# Import components
-from central_store import CentralPackageStore
-from environment_manager import EnvironmentManager
-from package_loader import PackageLoader
-
-# Initialize
-store = CentralPackageStore()
-env_mgr = EnvironmentManager()
-loader = PackageLoader(store, env_mgr)
-
-# Add package to store
-store.add_package("mypackage", "1.0.0", "/path/to/package")
-
-# Create environment
-env_mgr.create_environment("myenv", "My environment")
-
-# Add package to environment
-env_mgr.add_package_to_env("myenv", "mypackage", "1.0.0")
-
-# Activate environment
-loader.activate_environment("myenv")
-
-# Verify environment
-result = loader.verify_environment("myenv")
-
-# List packages
-packages = store.list_packages()
-
-# Get environment packages
-env_packages = env_mgr.get_environment_packages("myenv")
-```
-
-## Examples
-
-### Complete Workflow
+### Data Science Project
 ```bash
-# 1. Add packages to store
-python pypm.py add numpy 1.24.0 C:/packages/numpy
-python pypm.py add pandas 2.0.0 C:/packages/pandas
-
-# 2. Create environment
-python pypm.py create-env data_project -d "Data analysis"
-
-# 3. Install packages
-python pypm.py install data_project numpy 1.24.0
-python pypm.py install data_project pandas 2.0.0
-
-# 4. Verify and activate
-python pypm.py verify data_project
-python pypm.py activate data_project
+pypm create datascience
+pypm activate datascience
+# Run: C:\Users\...\datascience\Scripts\Activate.ps1
+pypm install pandas numpy matplotlib seaborn jupyter
+python analysis.py
+deactivate
 ```
 
-### Multiple Environments with Shared Packages
+### Web Development
 ```bash
-# Add packages (stored once)
-python pypm.py add scipy 1.11.0 C:/packages/scipy
+pypm create webapp
+pypm activate webapp
+# Activate...
+pypm install flask sqlalchemy requests
+python app.py
+deactivate
+```
 
-# Create two projects
-python pypm.py create-env project_a
-python pypm.py create-env project_b
+### Multiple Versions
+```bash
+# Project 1 with requests 2.28.0
+pypm create project1
+pypm activate project1
+# Activate...
+pypm install requests==2.28.0
+deactivate
 
-# Both use scipy (no duplication!)
-python pypm.py install project_a scipy 1.11.0
-python pypm.py install project_b scipy 1.11.0
-
-# Only one copy in storage
-python pypm.py info  # Shows 1 version of scipy
+# Project 2 with requests 2.31.0
+pypm create project2
+pypm activate project2
+# Activate...
+pypm install requests==2.31.0
+# ✅ Both versions coexist!
+deactivate
 ```
 
 ## Storage Locations
 
-- **Central Store**: `~/.pypm_store/`
-  - `packages/` - Package files
-  - `metadata.json` - Package registry
+- **Environments**: `~/.pypm_envs/{env_name}/`
+- **Versioned Packages**: `~/.pypm_central/packages/{package}/{version}/`
+- **Environment Config**: `{env}/.pypm_requirements.json`
 
-- **Environments**: `~/.pypm_envs/`
-  - `<env_name>.json` - Environment manifests
+## Key Features
 
-## Common Tasks
+✅ **Version Isolation** - Multiple package versions coexist  
+✅ **Zero Duplication** - Shared dependencies stored once  
+✅ **Environment-Specific** - Each env uses its own versions  
+✅ **Cross-Platform** - Windows, macOS, Linux  
 
-### Check what's in the store
-```bash
-python pypm.py list
-python pypm.py info
-```
+## Version 2.1.0 Highlights
 
-### See all environments
-```bash
-python pypm.py list-envs
-```
-
-### Check environment configuration
-```bash
-python pypm.py show-env myproject
-```
-
-### Verify environment is ready
-```bash
-python pypm.py verify myproject
-```
-
-### Create activation script
-```bash
-python pypm.py activate myproject -o activate.py
-python activate.py  # Activates the environment
-```
-
-## Tips
-
-1. **Descriptive names**: Use clear environment names
-2. **Add descriptions**: Helps remember purpose
-3. **Verify first**: Always verify before activating
-4. **Check store**: Monitor storage with `info`
-5. **Share configs**: Environment JSON files are portable
-
-## Troubleshooting
-
-### Package not found
-```bash
-# Check what's in store
-python pypm.py list
-
-# Add if missing
-python pypm.py add <name> <version> <path>
-```
-
-### Environment issues
-```bash
-# Check configuration
-python pypm.py show-env <name>
-
-# Verify packages
-python pypm.py verify <name>
-```
-
-### Start fresh
-```bash
-# Delete environment
-python pypm.py delete-env <name>
-
-# Remove package
-python pypm.py remove <name> <version>
-
-# Recreate
-python pypm.py create-env <name>
-```
-
-## Run Examples
-
-```bash
-# Interactive demo
-python demo.py
-
-# Basic example
-python examples/example_basic.py
-
-# Advanced example
-python examples/example_advanced.py
-
-# Show architecture
-python architecture.py
-```
-
-## Key Benefits
-
-✅ **No duplication** - Each package version stored once
-✅ **Storage efficient** - 12-90% savings
-✅ **Version flexible** - Different versions coexist
-✅ **Fast setup** - No redundant downloads
-✅ **Easy management** - Clear manifests
-
-## File Structure
-
-```
-Packagemanager/
-├── pypm.py                  # CLI interface
-├── central_store.py         # Package storage
-├── environment_manager.py   # Environment config
-├── package_loader.py        # Package loading
-├── demo.py                  # Interactive demo
-├── README.md                # Full documentation
-├── USAGE.md                 # Usage guide
-└── examples/
-    ├── example_basic.py
-    └── example_advanced.py
-```
-
----
-
-**PyPM - Efficient Python Package Management** 🚀
+- True version isolation with per-environment PYTHONPATH
+- Multiple package versions can coexist (e.g., requests 2.28.0 AND 2.31.0)
+- Shared dependencies are deduplicated (certifi, idna stored once)
+- Environment-specific package tracking via pypm_requirements.json

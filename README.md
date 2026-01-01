@@ -1,6 +1,6 @@
 # PyPM - Python Package Manager
 
-**Zero-duplication package management for Python** - Works like `venv` + `pip` but stores packages centrally!
+**True version isolation with zero duplication** - Multiple package versions coexist, environments use specific versions!
 
 ## 🚀 Quick Start
 
@@ -11,11 +11,12 @@ pip install pypm-manager
 # Create environment  
 pypm create myproject
 
-# Activate it (opens new shell)
-pypm activate myproject
+# Activate it
+pypm activate myproject  # Shows activation command
+# Run the activation command shown
 
-# Use pip normally - packages stored centrally!
-pip install pandas numpy scikit-learn
+# Install packages with version isolation
+pypm install pandas numpy scikit-learn
 
 # Deactivate when done
 deactivate
@@ -23,7 +24,7 @@ deactivate
 
 ## ✨ The Problem PyPM Solves
 
-**Before PyPM:**
+**Problem 1 - Duplication:**
 ```
 project1/venv/ → pandas 1.5.0 (100 MB)
 project2/venv/ → pandas 1.5.0 (100 MB)  [DUPLICATE!]
@@ -31,19 +32,32 @@ project3/venv/ → pandas 1.5.0 (100 MB)  [DUPLICATE!]
 Total: 300 MB wasted
 ```
 
-**With PyPM:**
+**Problem 2 - Version Conflicts:**
 ```
-~/.pypm_central/ → pandas 1.5.0 (100 MB)  [STORED ONCE!]
-All projects reference the same files
-Total: 100 MB  (66% savings!)
+project1 needs requests 2.28.0
+project2 needs requests 2.31.0
+❌ Can't have both with venv/conda!
+```
+
+**With PyPM v2.1:**
+```
+~/.pypm_central/packages/
+  ├── requests/2.28.0/  [Version 1]
+  ├── requests/2.31.0/  [Version 2]
+  └── pandas/1.5.0/     [Shared dependency - stored once!]
+
+✅ Both versions coexist
+✅ Environments use specific versions
+✅ Shared dependencies stored once
+Total: Zero duplication + True isolation!
 ```
 
 ## 🎯 How It Works
 
-1. **Create**: `pypm create myenv` - Creates environment
-2. **Activate**: `pypm activate myenv` - Opens activated shell
-3. **Install**: `pip install pandas` - Packages go to central store
-4. **Use Anywhere**: Activate same environment from any directory!
+1. **Create**: `pypm create myenv` - Creates lightweight environment
+2. **Activate**: `pypm activate myenv` - Shows activation command
+3. **Install**: `pypm install pandas==1.5.0` - Stores in version-specific directory
+4. **Isolation**: Each environment's PYTHONPATH points to its specific package versions
 
 ## 📦 Installation
 
@@ -56,7 +70,8 @@ pip install pypm-manager
 ```bash
 # Environment Management
 pypm create <name>         # Create environment
-pypm activate <name>       # Activate (opens new shell)
+pypm activate <name>       # Show activation command
+pypm install <package>     # Install with version isolation
 deactivate                 # Deactivate current environment
 pypm delete <name>         # Delete environment
 pypm list                  # List all environments
@@ -64,8 +79,6 @@ pypm info <name>           # Show environment details
 
 # Central Store
 pypm store-info            # View central store stats
-pypm store-install <pkg>   # Install to central store
-pypm store-uninstall <pkg> # Remove from central store
 ```
 
 ## 💡 Complete Example
@@ -74,9 +87,10 @@ pypm store-uninstall <pkg> # Remove from central store
 # Create data science environment
 pypm create datascience
 pypm activate datascience
+# Run activation command shown (e.g., C:\...\datascience\Scripts\Activate.ps1)
 
-# In activated shell - use pip normally:
-pip install pandas numpy matplotlib seaborn scikit-learn jupyter
+# Install packages with specific versions
+pypm install pandas==2.1.0 numpy scikit-learn
 
 # Work on your project...
 python my_analysis.py
@@ -84,32 +98,40 @@ python my_analysis.py
 # Deactivate
 deactivate
 
-# Later, from anywhere:
-pypm activate datascience  # Same environment!
+# Create another project with different pandas version
+pypm create ml-project
+pypm activate ml-project
+# Activate...
+
+pypm install pandas==2.3.0 tensorflow
+# ✅ Both pandas 2.1.0 and 2.3.0 coexist!
+# ✅ numpy/scikit-learn shared between projects
 ```
 
 ## 🌟 Features
 
-- ✅ **Works like venv** - Same familiar workflow
-- ✅ **Use standard `pip install`** - No new commands
-- ✅ **Zero package duplication** - 12-90% storage savings
-- ✅ **Machine-wide environments** - Activate from anywhere
+- ✅ **True version isolation** - Multiple package versions coexist
+- ✅ **Environment-specific versions** - Each env uses its own package versions
+- ✅ **Zero duplication** - Shared dependencies stored once
+- ✅ **Familiar workflow** - Similar to venv activation
 - ✅ **Cross-platform** - Windows, macOS, Linux
 - ✅ **No dependencies** - Pure Python stdlib
 
 ## 🆚 vs Other Tools
 
-| | venv | conda | PyPM |
+| | venv | conda | PyPM v2.1 |
 |---|---|---|---|
+| **Multiple versions** | No | Limited | Yes |
 | **Duplication** | Yes | Yes | No |
-| **Workflow** | activate + pip | activate + conda | activate + pip |
-| **Learning Curve** | None | Moderate | None |
-| **Storage Waste** | High | High | Zero |
+| **Workflow** | activate + pip | activate + conda | activate + pypm |
+| **Version Isolation** | No | Yes | Yes |
+| **Storage Efficiency** | Low | Low | High |
 
 ## 📁 Storage Locations
 
 - Environments: `~/.pypm_envs/`
-- Central packages: `~/.pypm_central/site-packages/`
+- Versioned packages: `~/.pypm_central/packages/{name}/{version}/`
+- Environment configs: `{env}/.pypm_requirements.json`
 
 ## 🤝 Contributing
 
@@ -121,4 +143,4 @@ MIT License
 
 ---
 
-**PyPM v2.0 - No more duplicate packages!** 🎉
+**PyPM v2.1 - True version isolation with zero duplication!** 🎉

@@ -7,10 +7,10 @@ long_description = (this_directory / "README.md").read_text(encoding='utf-8')
 
 setup(
     name='pypm-manager',
-    version='2.0.2',
+    version='2.1.0',
     author='Avishek',
     author_email='avishek8136@github.com',
-    description='Python package manager with centralized storage and zero duplication - works like venv + pip',
+    description='Python package manager with true version isolation - multiple package versions coexist without conflicts',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/Avishek8136/pypm',

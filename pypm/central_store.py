@@ -27,6 +27,8 @@ class CentralPackageStore:
             self.store_path = Path(store_path)
         
         self.packages_dir = self.store_path / 'site-packages'
+        self.versioned_packages_dir = self.store_path / 'packages'
+        self.temp_install_dir = self.store_path / 'temp_install'
         self.metadata_file = self.store_path / 'packages.json'
         
         self._initialize_store()
@@ -35,6 +37,8 @@ class CentralPackageStore:
         """Create store directory structure if it doesn't exist"""
         self.store_path.mkdir(parents=True, exist_ok=True)
         self.packages_dir.mkdir(parents=True, exist_ok=True)
+        self.versioned_packages_dir.mkdir(parents=True, exist_ok=True)
+        self.temp_install_dir.mkdir(parents=True, exist_ok=True)
         
         if not self.metadata_file.exists():
             self._save_metadata({'packages': {}, 'version': '2.0.0'})
@@ -201,3 +205,130 @@ class CentralPackageStore:
         except Exception as e:
             print(f"✗ Error uninstalling {package_name}: {e}")
             return False
+    
+    def install_packages(self, env_name: str, package_specs: List[str], env_manager) -> bool:
+        """
+        Install packages with version isolation
+        
+        Args:
+            env_name: Name of the environment
+            package_specs: List of package specifications (e.g., ['requests==2.28.0'])
+            env_manager: EnvironmentManager instance
+            
+        Returns:
+            True if installation successful
+        """
+        try:
+            # Clear temp install directory
+            if self.temp_install_dir.exists():
+                shutil.rmtree(self.temp_install_dir)
+            self.temp_install_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Install to temp directory
+            print("\nInstalling packages to temporary location...")
+            cmd = [
+                sys.executable, '-m', 'pip', 'install',
+                '--target', str(self.temp_install_dir),
+                '--no-warn-script-location'
+            ] + package_specs
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                print(f"✗ pip install failed:")
+                print(result.stderr)
+                return False
+            
+            print(result.stdout)
+            
+            # Get list of what was installed
+            installed_packages = self._get_installed_packages_from_temp()
+            
+            if not installed_packages:
+                print("✗ No packages detected after installation")
+                return False
+            
+            # Move packages to version-specific directories
+            print("\nOrganizing packages into version-specific storage...")
+            requirements = env_manager.load_env_requirements(env_name)
+            
+            for pkg_name, pkg_version in installed_packages.items():
+                # Create version-specific directory
+                version_dir = self.versioned_packages_dir / pkg_name / pkg_version
+                version_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Move package files from temp to version-specific directory
+                self._move_package_to_versioned_storage(pkg_name, pkg_version, version_dir)
+                
+                # Update environment requirements
+                requirements.setdefault('packages', {})[pkg_name] = pkg_version
+                print(f"  ✓ {pkg_name} {pkg_version} → {version_dir}")
+            
+            # Save updated requirements
+            env_manager.save_env_requirements(env_name, requirements)
+            
+            # Clean up temp directory
+            shutil.rmtree(self.temp_install_dir)
+            
+            print(f"\n✓ Successfully installed {len(installed_packages)} package(s)")
+            print(f"  Environment '{env_name}' now has access to these packages")
+            print(f"\n  NOTE: Reactivate the environment to update PYTHONPATH:")
+            print(f"    deactivate && pypm activate {env_name}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error during installation: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _get_installed_packages_from_temp(self) -> Dict[str, str]:
+        """Get packages and versions from temp install directory"""
+        packages = {}
+        
+        # Scan for .dist-info directories
+        for item in self.temp_install_dir.iterdir():
+            if item.is_dir() and item.name.endswith('.dist-info'):
+                # Parse package name and version from directory name
+                # Format: package_name-version.dist-info
+                dist_info_name = item.name[:-len('.dist-info')]
+                
+                # Find last dash to split name and version
+                parts = dist_info_name.rsplit('-', 1)
+                if len(parts) == 2:
+                    pkg_name, pkg_version = parts
+                    # Normalize package name
+                    pkg_name = pkg_name.lower().replace('_', '-')
+                    packages[pkg_name] = pkg_version
+        
+        return packages
+    
+    def _move_package_to_versioned_storage(self, pkg_name: str, pkg_version: str, version_dir: Path):
+        """Move package files from temp to version-specific directory"""
+        # Normalize package name for directory matching
+        pkg_normalized = pkg_name.replace('-', '_')
+        
+        # Move all related files (package dir, .dist-info, etc.)
+        for item in list(self.temp_install_dir.iterdir()):
+            item_name_lower = item.name.lower()
+            pkg_name_lower = pkg_name.lower()
+            
+            # Check if this item belongs to the package
+            should_move = (
+                item_name_lower == pkg_name_lower or
+                item_name_lower == pkg_normalized.lower() or
+                item_name_lower.startswith(pkg_name_lower + '-') or
+                item_name_lower.startswith(pkg_normalized.lower() + '-') or
+                (item_name_lower.replace('_', '-').startswith(pkg_name_lower + '-') and 
+                 item.is_dir() and item_name_lower.endswith('.dist-info'))
+            )
+            
+            if should_move:
+                dest = version_dir / item.name
+                if dest.exists():
+                    if dest.is_dir():
+                        shutil.rmtree(dest)
+                    else:
+                        dest.unlink()
+                shutil.move(str(item), str(dest))

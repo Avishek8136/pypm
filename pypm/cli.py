@@ -51,8 +51,8 @@ class PyPMCLI:
             print(f"  source {activate_sh}\n")
         
         print(f"{'='*70}")
-        print(f"  After activation, use: pip install <package>")
-        print(f"  Packages will be stored centrally (no duplication!)")
+        print(f"  After activation, use: pypm install <package>")
+        print(f"  Packages stored with version isolation (true multi-version support!)")
         print(f"  To exit: deactivate")
         print(f"{'='*70}\n")
         
@@ -122,6 +122,23 @@ class PyPMCLI:
         print(f"\n{'='*70}\n")
         return True
     
+    def install(self, *packages):
+        """Install packages to current environment with version isolation"""
+        if 'PYPM_ENV' not in os.environ:
+            print("✗ No PyPM environment is active")
+            print("  Activate an environment first: pypm activate <env-name>")
+            return False
+        
+        env_name = os.environ['PYPM_ENV']
+        temp_install = os.environ.get('PYPM_TEMP_INSTALL')
+        
+        if not temp_install:
+            print("✗ PYPM_TEMP_INSTALL not set. Reactivate the environment.")
+            return False
+        
+        # Install packages and track them
+        return self.store.install_packages(env_name, list(packages), self.env_manager)
+    
     def store_info(self):
         """Show information about the central store"""
         info = self.store.get_store_info()
@@ -166,7 +183,7 @@ class PyPMCLI:
 WORKFLOW (like venv + pip):
   1. pypm create myproject        # Create environment
   2. pypm activate myproject       # Activate environment
-  3. pip install pandas numpy      # Install packages (stored centrally!)
+  3. pypm install pandas numpy     # Install packages (version-isolated!)
   4. deactivate                    # Deactivate when done
 
 ENVIRONMENT COMMANDS:
@@ -176,24 +193,27 @@ ENVIRONMENT COMMANDS:
   delete <name>         Delete an environment
   list                  List all environments
   info <name>           Show environment details
+  install <pkg>         Install package(s) to active environment
 
 CENTRAL STORE COMMANDS:
   store-info            Show central store information
-  store-install <pkg>   Install package to central store
-  store-uninstall <pkg> Remove package from central store
+  store-install <pkg>   Install package to central store (legacy)
+  store-uninstall <pkg> Remove package from central store (legacy)
 
 EXAMPLES:
   pypm create datascience
   pypm activate datascience
-  # In activated environment: pip install pandas scikit-learn
+  # After activation (in PowerShell):
+  pypm install pandas scikit-learn
+  pypm install requests==2.28.0
   pypm list
   pypm info datascience
   pypm store-info
 
 FEATURES:
-  ✓ Works with standard pip install
-  ✓ Zero package duplication across environments
-  ✓ Each environment references centrally stored packages
+  ✓ True version isolation - multiple package versions coexist
+  ✓ Zero package duplication for shared dependencies
+  ✓ Each environment uses specific package versions
   ✓ Familiar venv-like workflow
   ✓ Cross-platform (Windows, macOS, Linux)
 
@@ -258,6 +278,12 @@ def main():
         
         elif command == 'store-info':
             cli.store_info()
+        
+        elif command == 'install':
+            if not args.args:
+                print("✗ Usage: pypm install <package> [package2 ...]")
+                sys.exit(1)
+            cli.install(*args.args)
         
         elif command == 'store-install':
             if not args.args:

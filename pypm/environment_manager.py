@@ -110,7 +110,8 @@ class EnvironmentManager:
         """Create custom activation scripts that integrate with central store"""
         
         # Get central store path
-        central_store = Path.home() / '.pypm_central' / 'site-packages'
+        central_store = Path.home() / '.pypm_central' / 'packages'
+        temp_install_dir = Path.home() / '.pypm_central' / 'temp_install'
         
         # PowerShell activation script
         activate_ps1 = env_path / 'Scripts' / 'Activate.ps1'
@@ -124,11 +125,31 @@ class EnvironmentManager:
 # PyPM Customizations
 $env:PYPM_ENV = "{env_name}"
 $env:PYPM_CENTRAL_STORE = "{central_store}"
-$env:PYTHONPATH = "{central_store}" + [IO.Path]::PathSeparator + $env:PYTHONPATH
+$env:PYPM_TEMP_INSTALL = "{temp_install_dir}"
+$env:PIP_TARGET = "{temp_install_dir}"
+$env:PIP_NO_WARN_SCRIPT_LOCATION = "1"
+
+# Build PYTHONPATH from environment-specific package versions
+$req_file = Join-Path "{env_path}" "pypm_requirements.json"
+if (Test-Path $req_file) {{
+    $requirements = Get-Content $req_file | ConvertFrom-Json
+    $package_paths = @()
+    foreach ($pkg in $requirements.packages.PSObject.Properties) {{
+        $pkg_name = $pkg.Name
+        $pkg_version = $pkg.Value
+        $pkg_path = Join-Path "{central_store}" "$pkg_name\\$pkg_version"
+        if (Test-Path $pkg_path) {{
+            $package_paths += $pkg_path
+        }}
+    }}
+    if ($package_paths.Count -gt 0) {{
+        $env:PYTHONPATH = ($package_paths -join [IO.Path]::PathSeparator) + [IO.Path]::PathSeparator + $env:PYTHONPATH
+    }}
+}}
 
 Write-Host "PyPM environment '{env_name}' activated" -ForegroundColor Green
 Write-Host "Central store: {central_store}" -ForegroundColor Cyan
-Write-Host "Use 'pip install <package>' to install packages" -ForegroundColor Yellow
+Write-Host "Use 'pypm install <package>' to install packages" -ForegroundColor Yellow
 Write-Host "Use 'deactivate' to exit" -ForegroundColor Yellow
 '''
             
@@ -148,30 +169,37 @@ Write-Host "Use 'deactivate' to exit" -ForegroundColor Yellow
         # CMD/Batch activation script
         activate_bat = env_path / 'Scripts' / 'activate.bat'
         if activate_bat.exists():
-            with open(activate_bat, 'r') as f:
+            with open(activate_bat, 'r', encoding='utf-8') as f:
                 original_content = f.read()
             
             pypm_additions = f'''
-@echo off
+@REM PyPM Customizations
 set PYPM_ENV={env_name}
 set PYPM_CENTRAL_STORE={central_store}
-set PYTHONPATH={central_store};%PYTHONPATH%
+set PYPM_TEMP_INSTALL={temp_install_dir}
+set PIP_TARGET={temp_install_dir}
+set PIP_NO_WARN_SCRIPT_LOCATION=1
+@REM Note: PYTHONPATH building from requirements requires PowerShell
 echo PyPM environment '{env_name}' activated
-echo Use 'pip install <package>' to install packages
+echo Central store: {central_store}
+echo Use 'pypm install ^<package^>' to install packages
 '''
             
-            with open(activate_bat, 'w') as f:
+            with open(activate_bat, 'w', encoding='utf-8') as f:
                 f.write(original_content + '\n' + pypm_additions)
         
         # Create deactivate.ps1
         deactivate_ps1 = env_path / 'Scripts' / 'deactivate.ps1'
-        with open(deactivate_ps1, 'w') as f:
+        with open(deactivate_ps1, 'w', encoding='utf-8') as f:
             f.write('''# PyPM Deactivation Script
 if (Test-Path Function:deactivate) {
     deactivate
 }
 Remove-Item Env:PYPM_ENV -ErrorAction SilentlyContinue
 Remove-Item Env:PYPM_CENTRAL_STORE -ErrorAction SilentlyContinue
+Remove-Item Env:PYPM_TEMP_INSTALL -ErrorAction SilentlyContinue
+Remove-Item Env:PIP_TARGET -ErrorAction SilentlyContinue
+Remove-Item Env:PIP_NO_WARN_SCRIPT_LOCATION -ErrorAction SilentlyContinue
 Write-Host "PyPM environment deactivated" -ForegroundColor Yellow
 ''')
     
@@ -286,3 +314,24 @@ Write-Host "PyPM environment deactivated" -ForegroundColor Yellow
         else:
             # Unix-like
             return f"source {env_path}/bin/activate"
+    
+    def get_env_requirements_file(self, env_name: str) -> Path:
+        """Get path to environment's requirements file"""
+        return self.get_env_path(env_name) / 'pypm_requirements.json'
+    
+    def load_env_requirements(self, env_name: str) -> Dict:
+        """Load environment's package requirements"""
+        req_file = self.get_env_requirements_file(env_name)
+        if req_file.exists():
+            try:
+                with open(req_file, 'r') as f:
+                    return json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                return {'packages': {}}
+        return {'packages': {}}
+    
+    def save_env_requirements(self, env_name: str, requirements: Dict):
+        """Save environment's package requirements"""
+        req_file = self.get_env_requirements_file(env_name)
+        with open(req_file, 'w') as f:
+            json.dump(requirements, f, indent=2)
