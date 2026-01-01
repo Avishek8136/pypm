@@ -7,7 +7,7 @@ long_description = (this_directory / "README.md").read_text(encoding='utf-8')
 
 setup(
     name='pypm-manager',
-    version='2.1.0',
+    version='2.2.0',
     author='Avishek',
     author_email='avishek8136@github.com',
     description='Python package manager with true version isolation - multiple package versions coexist without conflicts',

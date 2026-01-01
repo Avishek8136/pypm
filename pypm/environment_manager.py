@@ -129,15 +129,25 @@ $env:PYPM_TEMP_INSTALL = "{temp_install_dir}"
 $env:PIP_TARGET = "{temp_install_dir}"
 $env:PIP_NO_WARN_SCRIPT_LOCATION = "1"
 
-# Build PYTHONPATH from environment-specific package versions
+# Build PYTHONPATH from environment-specific package versions with Python tag support
 $req_file = Join-Path "{env_path}" "pypm_requirements.json"
 if (Test-Path $req_file) {{
     $requirements = Get-Content $req_file | ConvertFrom-Json
     $package_paths = @()
     foreach ($pkg in $requirements.packages.PSObject.Properties) {{
         $pkg_name = $pkg.Name
-        $pkg_version = $pkg.Value
-        $pkg_path = Join-Path "{central_store}" "$pkg_name\\$pkg_version"
+        $pkg_info = $pkg.Value
+        
+        # Handle both old format (string) and new format (object with version and python_tag)
+        if ($pkg_info -is [string]) {{
+            $pkg_version = $pkg_info
+            $pkg_path = Join-Path "{central_store}" "$pkg_name\\$pkg_version"
+        }} else {{
+            $pkg_version = $pkg_info.version
+            $python_tag = $pkg_info.python_tag
+            $pkg_path = Join-Path "{central_store}" "$pkg_name\\$pkg_version\\$python_tag"
+        }}
+        
         if (Test-Path $pkg_path) {{
             $package_paths += $pkg_path
         }}

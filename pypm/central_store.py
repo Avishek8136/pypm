@@ -7,6 +7,7 @@ import sys
 import json
 import shutil
 import subprocess
+import sysconfig
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
@@ -56,15 +57,37 @@ class CentralPackageStore:
         with open(self.metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
     
-    def get_package_dir(self, package_name: str, version: str) -> Path:
-        """Get the directory for a specific package version"""
+    def _get_python_tag(self, python_exe: str = None) -> str:
+        """Get Python version tag (e.g., cp311, cp313) for binary compatibility"""
+        if python_exe and python_exe != sys.executable:
+            # Get tag from another Python interpreter
+            try:
+                result = subprocess.run(
+                    [python_exe, '-c', 
+                     'import sysconfig; print(sysconfig.get_config_var("py_version_nodot") or ""'
+                     ' + sysconfig.get_config_var("SOABI").split("-")[0] if sysconfig.get_config_var("SOABI") else "")'],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return f"cp{result.stdout.strip()}"
+            except:
+                pass
+        
+        # Use current Python
+        version_info = sys.version_info
+        return f"cp{version_info.major}{version_info.minor}"
+    
+    def get_package_dir(self, package_name: str, version: str, python_tag: str = None) -> Path:
+        """Get the directory for a specific package version and Python version"""
         # Normalize package name (pip uses lowercase with underscores)
         normalized = package_name.lower().replace('-', '_')
+        if python_tag:
+            return self.versioned_packages_dir / normalized / version / python_tag
         return self.packages_dir / f"{normalized}-{version}"
     
-    def is_package_installed(self, package_name: str, version: str) -> bool:
+    def is_package_installed(self, package_name: str, version: str, python_tag: str = None) -> bool:
         """Check if a package version exists in central store"""
-        pkg_dir = self.get_package_dir(package_name, version)
+        pkg_dir = self.get_package_dir(package_name, version, python_tag)
         return pkg_dir.exists()
     
     def get_central_site_packages(self) -> Path:
@@ -219,15 +242,20 @@ class CentralPackageStore:
             True if installation successful
         """
         try:
+            # Get environment's Python executable and version tag
+            env_info = env_manager._load_metadata()
+            env_python = env_info['environments'].get(env_name, {}).get('python', sys.executable)
+            python_tag = self._get_python_tag(env_python)
+            
             # Clear temp install directory
             if self.temp_install_dir.exists():
                 shutil.rmtree(self.temp_install_dir)
             self.temp_install_dir.mkdir(parents=True, exist_ok=True)
             
-            # Install to temp directory
+            # Install to temp directory using environment's Python
             print("\nInstalling packages to temporary location...")
             cmd = [
-                sys.executable, '-m', 'pip', 'install',
+                env_python, '-m', 'pip', 'install',
                 '--target', str(self.temp_install_dir),
                 '--no-warn-script-location'
             ] + package_specs
@@ -253,16 +281,19 @@ class CentralPackageStore:
             requirements = env_manager.load_env_requirements(env_name)
             
             for pkg_name, pkg_version in installed_packages.items():
-                # Create version-specific directory
-                version_dir = self.versioned_packages_dir / pkg_name / pkg_version
+                # Create version-specific directory with Python tag
+                version_dir = self.versioned_packages_dir / pkg_name / pkg_version / python_tag
                 version_dir.mkdir(parents=True, exist_ok=True)
                 
                 # Move package files from temp to version-specific directory
                 self._move_package_to_versioned_storage(pkg_name, pkg_version, version_dir)
                 
-                # Update environment requirements
-                requirements.setdefault('packages', {})[pkg_name] = pkg_version
-                print(f"  ✓ {pkg_name} {pkg_version} → {version_dir}")
+                # Update environment requirements with Python tag
+                requirements.setdefault('packages', {})[pkg_name] = {
+                    'version': pkg_version,
+                    'python_tag': python_tag
+                }
+                print(f"  ✓ {pkg_name} {pkg_version} [{python_tag}] → {version_dir}")
             
             # Save updated requirements
             env_manager.save_env_requirements(env_name, requirements)
@@ -308,20 +339,37 @@ class CentralPackageStore:
         """Move package files from temp to version-specific directory"""
         # Normalize package name for directory matching
         pkg_normalized = pkg_name.replace('-', '_')
+        pkg_name_lower = pkg_name.lower()
+        pkg_normalized_lower = pkg_normalized.lower()
         
-        # Move all related files (package dir, .dist-info, etc.)
+        # First pass: Move directories/files that match the package name patterns
+        moved_items = set()
         for item in list(self.temp_install_dir.iterdir()):
             item_name_lower = item.name.lower()
-            pkg_name_lower = pkg_name.lower()
             
             # Check if this item belongs to the package
+            # Include: package dir, .dist-info, .libs, .pth files, etc.
             should_move = (
+                # Exact match
                 item_name_lower == pkg_name_lower or
-                item_name_lower == pkg_normalized.lower() or
+                item_name_lower == pkg_normalized_lower or
+                # With version suffix
                 item_name_lower.startswith(pkg_name_lower + '-') or
-                item_name_lower.startswith(pkg_normalized.lower() + '-') or
-                (item_name_lower.replace('_', '-').startswith(pkg_name_lower + '-') and 
-                 item.is_dir() and item_name_lower.endswith('.dist-info'))
+                item_name_lower.startswith(pkg_normalized_lower + '-') or
+                # .dist-info directories
+                (item.is_dir() and item_name_lower.endswith('.dist-info') and
+                 (item_name_lower.startswith(pkg_name_lower + '-') or 
+                  item_name_lower.startswith(pkg_normalized_lower + '-') or
+                  item_name_lower.replace('_', '-').startswith(pkg_name_lower + '-'))) or
+                # .libs directories (DLLs for Windows packages - check if removing .libs gives package name)
+                (item.is_dir() and item_name_lower.endswith('.libs') and
+                 (item_name_lower[:-5] == pkg_name_lower or  # Remove '.libs' and compare
+                  item_name_lower[:-5] == pkg_normalized_lower or
+                  item_name_lower.startswith(pkg_name_lower) or 
+                  item_name_lower.startswith(pkg_normalized_lower))) or
+                # .pth files
+                (item.name.endswith('.pth') and
+                 (pkg_name_lower in item_name_lower or pkg_normalized_lower in item_name_lower))
             )
             
             if should_move:
@@ -332,3 +380,57 @@ class CentralPackageStore:
                     else:
                         dest.unlink()
                 shutil.move(str(item), str(dest))
+                moved_items.add(item.name)
+        
+        # Second pass: Look for top-level module directories that belong to this package
+        # by checking the RECORD file in .dist-info (fallback to top_level.txt if RECORD doesn't exist)
+        dist_info_dir = version_dir / f"{pkg_normalized}-{pkg_version}.dist-info"
+        if not dist_info_dir.exists():
+            dist_info_dir = version_dir / f"{pkg_name}-{pkg_version}.dist-info"
+        
+        if dist_info_dir.exists():
+            # Try RECORD file first (most reliable)
+            record_file = dist_info_dir / 'RECORD'
+            top_level_modules = set()
+            
+            if record_file.exists():
+                try:
+                    with open(record_file, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            if line.strip():
+                                # Extract the file path (first part before comma)
+                                file_path = line.split(',')[0]
+                                # Get the top-level directory/module name
+                                parts = file_path.split('/')
+                                if len(parts) > 0:
+                                    top_module = parts[0]
+                                    # Skip dist-info and __pycache__ entries
+                                    if not top_module.endswith('.dist-info') and top_module != '__pycache__':
+                                        top_level_modules.add(top_module)
+                except Exception:
+                    pass
+            
+            # Fallback to top_level.txt if RECORD didn't work
+            if not top_level_modules:
+                top_level_file = dist_info_dir / 'top_level.txt'
+                if top_level_file.exists():
+                    try:
+                        with open(top_level_file, 'r') as f:
+                            top_level_modules = {line.strip() for line in f if line.strip()}
+                    except Exception:
+                        pass
+            
+            # Move these top-level modules from temp
+            for module_name in top_level_modules:
+                for item in list(self.temp_install_dir.iterdir()):
+                    if item.name == module_name or item.name.lower() == module_name.lower():
+                        if item.name not in moved_items:
+                            dest = version_dir / item.name
+                            if dest.exists():
+                                if dest.is_dir():
+                                    shutil.rmtree(dest)
+                                else:
+                                    dest.unlink()
+                            shutil.move(str(item), str(dest))
+                            moved_items.add(item.name)
+                        break
