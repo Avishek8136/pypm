@@ -1,32 +1,33 @@
 """
-Central Package Store - Manages all package versions in a single location
-Avoids duplication by storing each package version only once
+Central Package Store - Manages all pip-installed packages in a centralized location
+Works with standard pip installations, avoiding duplication across environments
 """
 import os
+import sys
 import json
-import hashlib
 import shutil
+import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 
 class CentralPackageStore:
-    """Manages centralized storage of all package versions"""
+    """Manages centralized storage of all package versions installed via pip"""
     
     def __init__(self, store_path: Optional[str] = None):
         """
         Initialize the central package store
         
         Args:
-            store_path: Path to the central store. Defaults to ~/.pypm_store
+            store_path: Path to the central store. Defaults to ~/.pypm_central
         """
         if store_path is None:
-            self.store_path = Path.home() / '.pypm_store'
+            self.store_path = Path.home() / '.pypm_central'
         else:
             self.store_path = Path(store_path)
         
-        self.packages_dir = self.store_path / 'packages'
-        self.metadata_file = self.store_path / 'metadata.json'
+        self.packages_dir = self.store_path / 'site-packages'
+        self.metadata_file = self.store_path / 'packages.json'
         
         self._initialize_store()
     
@@ -36,147 +37,167 @@ class CentralPackageStore:
         self.packages_dir.mkdir(parents=True, exist_ok=True)
         
         if not self.metadata_file.exists():
-            self._save_metadata({})
+            self._save_metadata({'packages': {}, 'version': '2.0.0'})
     
     def _load_metadata(self) -> Dict:
         """Load package metadata from store"""
-        with open(self.metadata_file, 'r') as f:
-            return json.load(f)
+        try:
+            with open(self.metadata_file, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {'packages': {}, 'version': '2.0.0'}
     
     def _save_metadata(self, metadata: Dict):
         """Save package metadata to store"""
         with open(self.metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
     
-    def _get_package_hash(self, package_name: str, version: str) -> str:
-        """Generate unique hash for package version"""
-        unique_id = f"{package_name}@{version}"
-        return hashlib.sha256(unique_id.encode()).hexdigest()[:16]
+    def get_package_dir(self, package_name: str, version: str) -> Path:
+        """Get the directory for a specific package version"""
+        # Normalize package name (pip uses lowercase with underscores)
+        normalized = package_name.lower().replace('-', '_')
+        return self.packages_dir / f"{normalized}-{version}"
     
-    def add_package(self, package_name: str, version: str, source_path: str) -> str:
-        """
-        Add a package version to the central store
-        
-        Args:
-            package_name: Name of the package
-            version: Version string
-            source_path: Path to the package files
-        
-        Returns:
-            Hash identifier of the stored package
-        """
-        metadata = self._load_metadata()
-        
-        # Generate unique identifier
-        pkg_hash = self._get_package_hash(package_name, version)
-        pkg_key = f"{package_name}@{version}"
-        
-        # Check if already exists
-        if pkg_key in metadata:
-            print(f"Package {pkg_key} already exists in store")
-            return metadata[pkg_key]['hash']
-        
-        # Create package directory in store
-        pkg_store_path = self.packages_dir / pkg_hash
-        
-        if pkg_store_path.exists():
-            shutil.rmtree(pkg_store_path)
-        
-        # Copy package files to store
-        shutil.copytree(source_path, pkg_store_path)
-        
-        # Update metadata
-        metadata[pkg_key] = {
-            'name': package_name,
-            'version': version,
-            'hash': pkg_hash,
-            'path': str(pkg_store_path)
-        }
-        
-        self._save_metadata(metadata)
-        print(f"Added {pkg_key} to central store with hash {pkg_hash}")
-        
-        return pkg_hash
+    def is_package_installed(self, package_name: str, version: str) -> bool:
+        """Check if a package version exists in central store"""
+        pkg_dir = self.get_package_dir(package_name, version)
+        return pkg_dir.exists()
     
-    def get_package_path(self, package_name: str, version: str) -> Optional[str]:
-        """
-        Get the path to a specific package version in the store
-        
-        Args:
-            package_name: Name of the package
-            version: Version string
-        
-        Returns:
-            Path to the package or None if not found
-        """
-        metadata = self._load_metadata()
-        pkg_key = f"{package_name}@{version}"
-        
-        if pkg_key in metadata:
-            return metadata[pkg_key]['path']
-        
-        return None
+    def get_central_site_packages(self) -> Path:
+        """Get the central site-packages directory"""
+        return self.packages_dir
     
-    def list_packages(self) -> List[Dict]:
-        """List all packages in the store"""
-        metadata = self._load_metadata()
-        return [
-            {
-                'name': info['name'],
-                'version': info['version'],
-                'hash': info['hash']
-            }
-            for info in metadata.values()
-        ]
+    def list_all_packages(self) -> Dict[str, List[str]]:
+        """List all packages and their versions in the central store"""
+        packages = {}
+        
+        if not self.packages_dir.exists():
+            return packages
+        
+        # Scan site-packages directory
+        for item in self.packages_dir.iterdir():
+            if item.is_dir() and not item.name.startswith('.') and not item.name.endswith('.dist-info'):
+                # Try to extract package name
+                if not any(item.name.endswith(ext) for ext in ['.dist-info', '.egg-info']):
+                    pkg_name = item.name
+                    if pkg_name not in packages:
+                        packages[pkg_name] = []
+                    packages[pkg_name].append('installed')
+        
+        return packages
     
-    def remove_package(self, package_name: str, version: str) -> bool:
-        """
-        Remove a package version from the store
-        
-        Args:
-            package_name: Name of the package
-            version: Version string
-        
-        Returns:
-            True if removed, False if not found
-        """
-        metadata = self._load_metadata()
-        pkg_key = f"{package_name}@{version}"
-        
-        if pkg_key not in metadata:
-            return False
-        
-        # Remove directory
-        pkg_path = Path(metadata[pkg_key]['path'])
-        if pkg_path.exists():
-            shutil.rmtree(pkg_path)
-        
-        # Remove from metadata
-        del metadata[pkg_key]
-        self._save_metadata(metadata)
-        
-        print(f"Removed {pkg_key} from central store")
-        return True
+    def get_installed_packages_from_pip(self, python_exe: str = None) -> List[Dict[str, str]]:
+        """Get list of packages in central store using pip list"""
+        if python_exe is None:
+            python_exe = sys.executable
+            
+        try:
+            env = os.environ.copy()
+            env['PYTHONPATH'] = str(self.packages_dir)
+            
+            result = subprocess.run(
+                [python_exe, '-m', 'pip', 'list', '--format=json'],
+                capture_output=True,
+                text=True,
+                env=env
+            )
+            
+            if result.returncode == 0:
+                return json.loads(result.stdout)
+            return []
+        except Exception:
+            return []
     
     def get_store_info(self) -> Dict:
-        """Get information about the store"""
-        metadata = self._load_metadata()
-        
-        total_packages = len(metadata)
-        unique_packages = len(set(info['name'] for info in metadata.values()))
-        
-        # Calculate total size
+        """Get information about the central store"""
         total_size = 0
-        for pkg_info in metadata.values():
-            pkg_path = Path(pkg_info['path'])
-            if pkg_path.exists():
-                for file in pkg_path.rglob('*'):
-                    if file.is_file():
-                        total_size += file.stat().st_size
+        file_count = 0
+        
+        if self.packages_dir.exists():
+            for item in self.packages_dir.rglob('*'):
+                if item.is_file():
+                    total_size += item.stat().st_size
+                    file_count += 1
+                    
+        packages = self.list_all_packages()
         
         return {
             'store_path': str(self.store_path),
-            'total_versions': total_packages,
-            'unique_packages': unique_packages,
-            'total_size_mb': round(total_size / (1024 * 1024), 2)
+            'packages_dir': str(self.packages_dir),
+            'total_packages': len(packages),
+            'total_files': file_count,
+            'total_size_mb': round(total_size / (1024 * 1024), 2),
+            'packages': packages
         }
+    
+    def install_to_central(self, package_spec: str, upgrade: bool = False) -> bool:
+        """
+        Install a package directly to the central store using pip
+        
+        Args:
+            package_spec: Package specification (e.g., 'pandas==1.5.0' or 'numpy')
+            upgrade: Whether to upgrade if already installed
+            
+        Returns:
+            True if installation successful
+        """
+        try:
+            cmd = [
+                sys.executable, '-m', 'pip', 'install',
+                '--target', str(self.packages_dir),
+                '--no-warn-script-location'
+            ]
+            
+            if upgrade:
+                cmd.append('--upgrade')
+            
+            cmd.append(package_spec)
+            
+            print(f"Installing {package_spec} to central store...")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                print(f"✓ Installed {package_spec} to central store")
+                return True
+            else:
+                print(f"✗ Failed to install {package_spec}")
+                if result.stderr:
+                    print(result.stderr)
+                return False
+                
+        except Exception as e:
+            print(f"✗ Error installing {package_spec}: {e}")
+            return False
+    
+    def uninstall_from_central(self, package_name: str) -> bool:
+        """
+        Uninstall a package from the central store
+        
+        Args:
+            package_name: Name of package to uninstall
+            
+        Returns:
+            True if uninstallation successful
+        """
+        try:
+            # Find and remove package directories
+            pkg_pattern = package_name.lower().replace('-', '_')
+            removed = False
+            
+            for item in self.packages_dir.iterdir():
+                if (item.is_dir() and 
+                    (item.name == pkg_pattern or 
+                     item.name.startswith(pkg_pattern + '-') or
+                     item.name.startswith(pkg_pattern + '.'))):
+                    shutil.rmtree(item)
+                    print(f"✓ Removed {item.name}")
+                    removed = True
+            
+            if not removed:
+                print(f"✗ Package {package_name} not found in central store")
+            
+            return removed
+            
+        except Exception as e:
+            print(f"✗ Error uninstalling {package_name}: {e}")
+            return False

@@ -1,20 +1,18 @@
 """
 PyPM - Python Package Manager
-A package manager that centralizes package storage and uses environment-specific manifests
+Works like venv + pip but with centralized package storage (zero duplication)
 """
 
-__version__ = "1.0.1"
+__version__ = "2.0.0"
 __author__ = "Avishek"
-__description__ = "Efficient Python package manager with centralized storage"
+__description__ = "Python package manager with centralized storage and zero duplication"
 __url__ = "https://github.com/Avishek8136/pypm"
 
 from .central_store import CentralPackageStore
 from .environment_manager import EnvironmentManager
-from .package_loader import PackageLoader
 
 __all__ = [
     'CentralPackageStore',
     'EnvironmentManager',
-    'PackageLoader',
     '__version__',
 ]

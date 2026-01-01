@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pypm-manager"
-version = "1.0.1"
-description = "Efficient Python package manager with centralized storage and zero duplication"
+version = "2.0.0"
+description = "Python package manager with centralized storage and zero duplication - works like venv + pip"
 readme = "README.md"
 authors = [
     {name = "Avishek", email = "avishek8136@github.com"}

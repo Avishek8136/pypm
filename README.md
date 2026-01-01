@@ -1,317 +1,124 @@
 # PyPM - Python Package Manager
 
-A revolutionary Python package manager that eliminates package duplication across environments by using centralized storage with environment-specific manifests.
+**Zero-duplication package management for Python** - Works like `venv` + `pip` but stores packages centrally!
 
-[![PyPI version](https://badge.fury.io/py/pypm-manager.svg)](https://badge.fury.io/py/pypm-manager)
-[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## 🚀 Quick Start
 
-## 🎯 Problem Solved
+```bash
+# Install PyPM
+pip install pypm-manager
 
-Traditional Python package managers create separate copies of packages for each virtual environment, leading to:
-- **Massive storage waste** from duplicated packages
-- **Slower environment setup** due to redundant downloads
-- **Difficult package management** across multiple projects
+# Create environment  
+pypm create myproject
 
-## 💡 Solution
+# Activate it (opens new shell)
+pypm activate myproject
 
-PyPM stores each package version **only once** in a central location and uses lightweight environment dictionary files to specify which versions each environment should use.
+# Use pip normally - packages stored centrally!
+pip install pandas numpy scikit-learn
 
-### Key Features
+# Deactivate when done
+deactivate
+```
 
-- ✅ **Zero Duplication**: Each package version stored only once
-- ✅ **Environment Manifests**: JSON-based dictionary files specify package versions
-- ✅ **Efficient Loading**: Only specified packages are loaded per environment
-- ✅ **Storage Savings**: Dramatically reduces disk usage
-- ✅ **Fast Setup**: No redundant package downloads
-- ✅ **No Dependencies**: Pure Python standard library
+## ✨ The Problem PyPM Solves
+
+**Before PyPM:**
+```
+project1/venv/ → pandas 1.5.0 (100 MB)
+project2/venv/ → pandas 1.5.0 (100 MB)  [DUPLICATE!]
+project3/venv/ → pandas 1.5.0 (100 MB)  [DUPLICATE!]
+Total: 300 MB wasted
+```
+
+**With PyPM:**
+```
+~/.pypm_central/ → pandas 1.5.0 (100 MB)  [STORED ONCE!]
+All projects reference the same files
+Total: 100 MB  (66% savings!)
+```
+
+## 🎯 How It Works
+
+1. **Create**: `pypm create myenv` - Creates environment
+2. **Activate**: `pypm activate myenv` - Opens activated shell
+3. **Install**: `pip install pandas` - Packages go to central store
+4. **Use Anywhere**: Activate same environment from any directory!
 
 ## 📦 Installation
-
-### Install from PyPI (Recommended)
 
 ```bash
 pip install pypm-manager
 ```
 
-### Install from Source
+## 🔧 Commands
 
 ```bash
-git clone https://github.com/yourusername/pypm.git
-cd pypm
-pip install -e .
+# Environment Management
+pypm create <name>         # Create environment
+pypm activate <name>       # Activate (opens new shell)
+deactivate                 # Deactivate current environment
+pypm delete <name>         # Delete environment
+pypm list                  # List all environments
+pypm info <name>           # Show environment details
+
+# Central Store
+pypm store-info            # View central store stats
+pypm store-install <pkg>   # Install to central store
+pypm store-uninstall <pkg> # Remove from central store
 ```
 
-### Verify Installation
+## 💡 Complete Example
 
 ```bash
-pypm --help
+# Create data science environment
+pypm create datascience
+pypm activate datascience
+
+# In activated shell - use pip normally:
+pip install pandas numpy matplotlib seaborn scikit-learn jupyter
+
+# Work on your project...
+python my_analysis.py
+
+# Deactivate
+deactivate
+
+# Later, from anywhere:
+pypm activate datascience  # Same environment!
 ```
 
-## 📁 Architecture
-
-```
-PyPM System
-├── Central Store (~/.pypm_store/)
-│   ├── packages/
-│   │   ├── <hash1>/  (e.g., numpy 1.24.0)
-│   │   ├── <hash2>/  (e.g., pandas 2.0.0)
-│   │   └── <hash3>/  (e.g., numpy 1.23.0)
-│   └── metadata.json
-│
-└── Environments (~/.pypm_envs/)
-    ├── project1.json  (manifest with package versions)
-    ├── project2.json
-    └── ml_project.json
-```
-
-## 🚀 Quick Start
-
-After installation, the `pypm` command is available globally:
-
-### Basic Usage
-
-#### 1. Add Packages to Central Store
-
-```bash
-# Add a package version to the central store
-pypm add numpy 1.24.0 /path/to/numpy/files
-
-# Add another version
-pypm add numpy 1.23.0 /path/to/numpy-1.23.0/files
-
-# Add different packages
-pypm add pandas 2.0.0 /path/to/pandas/files
-pypm add requests 2.31.0 /path/to/requests/files
-```
-
-#### 2. Create Environments
-
-```bash
-# Create a new environment
-#### 2. Create Environments
-
-```bash
-# Create a new environment
-pypm create-env project1 -d "Data analysis project"
-
-# Create another environment
-pypm create-env ml_project -d "Machine learning project"
-```
-
-#### 3. Install Packages to Environments
-
-```bash
-# Install specific package versions to project1
-pypm install project1 numpy 1.24.0
-pypm install project1 pandas 2.0.0
-
-# Install different versions to ml_project
-pypm install ml_project numpy 1.23.0
-pypm install ml_project requests 2.31.0
-```
-
-#### 4. Verify & Activate
-
-```bash
-# Verify all packages are available
-pypm verify project1
-
-# Generate activation script
-pypm activate project1 -o activate_project1.py
-```
-
-## 📋 CLI Commands
-
-### Package Management
-
-```bash
-# Add package to central store
-pypm add <name> <version> <path>
-
-# Remove package from store
-pypm remove <name> <version>
-
-# List all packages in store
-pypm list
-
-# Show store information
-pypm info
-```
-
-### Environment Management
-
-```bash
-# Create environment
-pypm create-env <name> [-d description]
-
-# Delete environment
-pypm delete-env <name>
-
-# List all environments
-pypm list-envs
-
-# Show environment details
-pypm show-env <name>
-
-# Install package to environment
-pypm install <env> <package> <version>
-
-# Uninstall package from environment
-pypm uninstall <env> <package>
-
-# Verify environment
-pypm verify <name>
-
-# Create activation script
-pypm activate <name> [-o output.py]
-```
-
-## 💻 Programmatic Usage
-
-```python
-from pypm import CentralPackageStore, EnvironmentManager, PackageLoader
-
-# Initialize components
-store = CentralPackageStore()
-env_manager = EnvironmentManager()
-loader = PackageLoader(store, env_manager)
-
-# Add packages to central store
-store.add_package("numpy", "1.24.0", "/path/to/numpy")
-store.add_package("pandas", "2.0.0", "/path/to/pandas")
-
-# Create environment
-env_manager.create_environment("my_project", "Data analysis")
-env_manager.add_package_to_env("my_project", "numpy", "1.24.0")
-env_manager.add_package_to_env("my_project", "pandas", "2.0.0")
-
-# Load and activate environment
-loader.activate_environment("my_project")
-
-# Now you can import the packages
-import numpy as np
-import pandas as pd
-```
-
-## 📊 Example Workflow
-
-```bash
-# 1. Setup central store with packages
-pypm add numpy 1.24.0 C:/packages/numpy-1.24.0
-pypm add pandas 2.0.0 C:/packages/pandas-2.0.0
-pypm add scikit-learn 1.3.0 C:/packages/sklearn-1.3.0
-
-# 2. Create two projects with different requirements
-pypm create-env data_analysis -d "Data analysis project"
-pypm create-env ml_model -d "ML model training"
-
-# 3. Configure each environment
-pypm install data_analysis numpy 1.24.0
-pypm install data_analysis pandas 2.0.0
-
-pypm install ml_model numpy 1.24.0
-pypm install ml_model scikit-learn 1.3.0
-
-# 4. Verify environments
-pypm verify data_analysis
-pypm verify ml_model
-
-# 5. View what's in store
-pypm list
-pypm info
-
-# 6. Generate activation scripts
-pypm activate data_analysis
-pypm activate ml_model
-```
-
-## 🔍 Environment Manifest Example
-
-Each environment is stored as a JSON file:
-
-```json
-{
-  "name": "project1",
-  "description": "Data analysis project",
-  "packages": {
-    "numpy": "1.24.0",
-    "pandas": "2.0.0",
-    "requests": "2.31.0"
-  },
-  "metadata": {
-    "created": true
-  }
-}
-```
-
-## 💾 Storage Savings Example
-
-**Traditional approach:**
-- Environment 1: numpy (50MB) + pandas (100MB) + requests (5MB) = 155MB
-- Environment 2: numpy (50MB) + scikit-learn (200MB) = 250MB
-- **Total: 405MB** (numpy duplicated)
-
-**PyPM approach:**
-- Central Store: numpy (50MB) + pandas (100MB) + requests (5MB) + scikit-learn (200MB) = 355MB
-- Environment files: 2 × ~1KB = 2KB
-- **Total: 355MB + 2KB** 
-- **Savings: 50MB (12% reduction with just 2 environments)**
-
-With more environments, savings multiply significantly!
-
-## 🏗️ Project Structure
-
-```
-Packagemanager/
-├── central_store.py         # Central package storage management
-├── environment_manager.py   # Environment manifest handling
-├── package_loader.py        # Package loading and activation
-├── pypm.py                  # Command-line interface
-├── __init__.py              # Package initialization
-├── README.md                # This file
-└── examples/                # Example usage scripts
-    ├── example_basic.py
-    └── example_advanced.py
-```
-
-## 🔧 Requirements
-
-- Python 3.7+
-- No external dependencies (uses only standard library)
-
-## 🎓 Use Cases
-
-1. **Multi-project development**: Share packages across multiple projects
-2. **Testing multiple versions**: Test code against different package versions
-3. **CI/CD pipelines**: Faster environment setup in automated builds
-4. **Educational environments**: Create multiple student environments efficiently
-5. **Production deployments**: Reduce container image sizes
-
-## 📝 Notes
-
-- Package paths are stored as absolute paths in the central store
-- Environment manifests are lightweight JSON files (~1KB each)
-- The system uses content-addressable storage (hash-based naming)
-- Compatible with existing Python packages
-
-## 🚀 Future Enhancements
-
-- Automatic package download from PyPI
-- Dependency resolution
-- Virtual environment integration
-- Package verification and checksums
-- Export/import environment configurations
-- Cloud storage backend support
-
-## 📄 License
-
-This project is open source and available for educational and commercial use.
+## 🌟 Features
+
+- ✅ **Works like venv** - Same familiar workflow
+- ✅ **Use standard `pip install`** - No new commands
+- ✅ **Zero package duplication** - 12-90% storage savings
+- ✅ **Machine-wide environments** - Activate from anywhere
+- ✅ **Cross-platform** - Windows, macOS, Linux
+- ✅ **No dependencies** - Pure Python stdlib
+
+## 🆚 vs Other Tools
+
+| | venv | conda | PyPM |
+|---|---|---|---|
+| **Duplication** | Yes | Yes | No |
+| **Workflow** | activate + pip | activate + conda | activate + pip |
+| **Learning Curve** | None | Moderate | None |
+| **Storage Waste** | High | High | Zero |
+
+## 📁 Storage Locations
+
+- Environments: `~/.pypm_envs/`
+- Central packages: `~/.pypm_central/site-packages/`
 
 ## 🤝 Contributing
 
-Contributions are welcome! This is a proof-of-concept that can be extended with additional features.
+https://github.com/Avishek8136/pypm
+
+## 📜 License
+
+MIT License
 
 ---
 
-**PyPM - Making Python package management efficient, one environment at a time!** 🚀
+**PyPM v2.0 - No more duplicate packages!** 🎉

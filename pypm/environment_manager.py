@@ -1,192 +1,278 @@
 """
-Environment Manager - Handles environment-specific package manifests
-Uses dictionary-based configuration to specify package versions per environment
+Environment Manager - Creates and manages isolated Python environments
+Each environment links to packages in the central store (zero duplication)
 """
 import os
+import sys
 import json
+import shutil
+import subprocess
+import venv
 from pathlib import Path
 from typing import Dict, List, Optional
 
 
 class EnvironmentManager:
-    """Manages environment manifests and package dependencies"""
+    """Manages PyPM environments that link to central package store"""
     
-    def __init__(self, environments_path: Optional[str] = None):
+    def __init__(self, envs_path: Optional[str] = None):
         """
         Initialize the environment manager
         
         Args:
-            environments_path: Path to store environment configs. Defaults to ~/.pypm_envs
+            envs_path: Path to store environments. Defaults to ~/.pypm_envs
         """
-        if environments_path is None:
+        if envs_path is None:
             self.envs_path = Path.home() / '.pypm_envs'
         else:
-            self.envs_path = Path(environments_path)
+            self.envs_path = Path(envs_path)
         
+        self.metadata_file = self.envs_path / 'environments.json'
+        self._initialize()
+    
+    def _initialize(self):
+        """Create environments directory if it doesn't exist"""
         self.envs_path.mkdir(parents=True, exist_ok=True)
+        
+        if not self.metadata_file.exists():
+            self._save_metadata({'environments': {}, 'version': '2.0.0'})
     
-    def create_environment(self, env_name: str, description: str = "") -> bool:
+    def _load_metadata(self) -> Dict:
+        """Load environment metadata"""
+        try:
+            with open(self.metadata_file, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {'environments': {}, 'version': '2.0.0'}
+    
+    def _save_metadata(self, metadata: Dict):
+        """Save environment metadata"""
+        with open(self.metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+    
+    def get_env_path(self, env_name: str) -> Path:
+        """Get the path for an environment"""
+        return self.envs_path / env_name
+    
+    def create_environment(self, env_name: str, python_exe: str = None) -> bool:
         """
-        Create a new environment
+        Create a new PyPM environment
         
         Args:
             env_name: Name of the environment
-            description: Optional description
-        
+            python_exe: Python executable to use (default: current Python)
+            
         Returns:
-            True if created, False if already exists
+            True if creation successful
         """
-        env_file = self.envs_path / f"{env_name}.json"
-        
-        if env_file.exists():
-            print(f"Environment '{env_name}' already exists")
+        if self.environment_exists(env_name):
+            print(f"✗ Environment '{env_name}' already exists")
             return False
         
-        env_config = {
-            'name': env_name,
-            'description': description,
-            'packages': {},
-            'metadata': {
-                'created': True
+        env_path = self.get_env_path(env_name)
+        
+        try:
+            print(f"Creating environment '{env_name}'...")
+            
+            # Create base venv structure
+            if python_exe is None:
+                python_exe = sys.executable
+            
+            # Create virtual environment
+            venv.create(env_path, with_pip=True, clear=False)
+            
+            # Create custom activation scripts
+            self._create_activation_scripts(env_name, env_path)
+            
+            # Update metadata
+            metadata = self._load_metadata()
+            metadata['environments'][env_name] = {
+                'path': str(env_path),
+                'python': python_exe,
+                'created': str(Path(env_path).stat().st_ctime),
+                'packages': {}
             }
-        }
-        
-        with open(env_file, 'w') as f:
-            json.dump(env_config, f, indent=2)
-        
-        print(f"Created environment '{env_name}'")
-        return True
-    
-    def add_package_to_env(self, env_name: str, package_name: str, version: str) -> bool:
-        """
-        Add or update a package in an environment
-        
-        Args:
-            env_name: Name of the environment
-            package_name: Name of the package
-            version: Version string
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        env_file = self.envs_path / f"{env_name}.json"
-        
-        if not env_file.exists():
-            print(f"Environment '{env_name}' does not exist")
+            self._save_metadata(metadata)
+            
+            print(f"✓ Environment '{env_name}' created successfully")
+            print(f"  Location: {env_path}")
+            print(f"\nActivate with: pypm activate {env_name}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"✗ Failed to create environment: {e}")
+            if env_path.exists():
+                shutil.rmtree(env_path)
             return False
-        
-        with open(env_file, 'r') as f:
-            env_config = json.load(f)
-        
-        env_config['packages'][package_name] = version
-        
-        with open(env_file, 'w') as f:
-            json.dump(env_config, f, indent=2)
-        
-        print(f"Added {package_name}@{version} to environment '{env_name}'")
-        return True
     
-    def remove_package_from_env(self, env_name: str, package_name: str) -> bool:
-        """
-        Remove a package from an environment
+    def _create_activation_scripts(self, env_name: str, env_path: Path):
+        """Create custom activation scripts that integrate with central store"""
         
-        Args:
-            env_name: Name of the environment
-            package_name: Name of the package
+        # Get central store path
+        central_store = Path.home() / '.pypm_central' / 'site-packages'
         
-        Returns:
-            True if successful, False otherwise
-        """
-        env_file = self.envs_path / f"{env_name}.json"
+        # PowerShell activation script
+        activate_ps1 = env_path / 'Scripts' / 'Activate.ps1'
+        if activate_ps1.exists():
+            # Read original
+            with open(activate_ps1, 'r') as f:
+                original_content = f.read()
+            
+            # Add PyPM customizations
+            pypm_additions = f'''
+# PyPM Customizations
+$env:PYPM_ENV = "{env_name}"
+$env:PYPM_CENTRAL_STORE = "{central_store}"
+$env:PYTHONPATH = "{central_store}" + [IO.Path]::PathSeparator + $env:PYTHONPATH
+
+Write-Host "PyPM environment '{env_name}' activated" -ForegroundColor Green
+Write-Host "Central store: {central_store}" -ForegroundColor Cyan
+Write-Host "Use 'pip install <package>' to install packages" -ForegroundColor Yellow
+Write-Host "Use 'pypm deactivate' or 'deactivate' to deactivate" -ForegroundColor Yellow
+'''
+            
+            with open(activate_ps1, 'w') as f:
+                f.write(original_content + '\n' + pypm_additions)
         
-        if not env_file.exists():
-            print(f"Environment '{env_name}' does not exist")
-            return False
+        # CMD/Batch activation script
+        activate_bat = env_path / 'Scripts' / 'activate.bat'
+        if activate_bat.exists():
+            with open(activate_bat, 'r') as f:
+                original_content = f.read()
+            
+            pypm_additions = f'''
+@echo off
+set PYPM_ENV={env_name}
+set PYPM_CENTRAL_STORE={central_store}
+set PYTHONPATH={central_store};%PYTHONPATH%
+echo PyPM environment '{env_name}' activated
+echo Use 'pip install <package>' to install packages
+'''
+            
+            with open(activate_bat, 'w') as f:
+                f.write(original_content + '\n' + pypm_additions)
         
-        with open(env_file, 'r') as f:
-            env_config = json.load(f)
-        
-        if package_name not in env_config['packages']:
-            print(f"Package '{package_name}' not found in environment '{env_name}'")
-            return False
-        
-        del env_config['packages'][package_name]
-        
-        with open(env_file, 'w') as f:
-            json.dump(env_config, f, indent=2)
-        
-        print(f"Removed {package_name} from environment '{env_name}'")
-        return True
-    
-    def get_environment_packages(self, env_name: str) -> Optional[Dict[str, str]]:
-        """
-        Get all packages defined in an environment
-        
-        Args:
-            env_name: Name of the environment
-        
-        Returns:
-            Dictionary mapping package names to versions, or None if env doesn't exist
-        """
-        env_file = self.envs_path / f"{env_name}.json"
-        
-        if not env_file.exists():
-            return None
-        
-        with open(env_file, 'r') as f:
-            env_config = json.load(f)
-        
-        return env_config['packages']
-    
-    def list_environments(self) -> List[Dict]:
-        """List all available environments"""
-        environments = []
-        
-        for env_file in self.envs_path.glob('*.json'):
-            with open(env_file, 'r') as f:
-                env_config = json.load(f)
-                environments.append({
-                    'name': env_config['name'],
-                    'description': env_config.get('description', ''),
-                    'package_count': len(env_config['packages'])
-                })
-        
-        return environments
+        # Create deactivate.ps1
+        deactivate_ps1 = env_path / 'Scripts' / 'deactivate.ps1'
+        with open(deactivate_ps1, 'w') as f:
+            f.write('''# PyPM Deactivation Script
+if (Test-Path Function:deactivate) {
+    deactivate
+}
+Remove-Item Env:PYPM_ENV -ErrorAction SilentlyContinue
+Remove-Item Env:PYPM_CENTRAL_STORE -ErrorAction SilentlyContinue
+Write-Host "PyPM environment deactivated" -ForegroundColor Yellow
+''')
     
     def delete_environment(self, env_name: str) -> bool:
         """
         Delete an environment
         
         Args:
-            env_name: Name of the environment
-        
+            env_name: Name of the environment to delete
+            
         Returns:
-            True if deleted, False if not found
+            True if deletion successful
         """
-        env_file = self.envs_path / f"{env_name}.json"
-        
-        if not env_file.exists():
-            print(f"Environment '{env_name}' does not exist")
+        if not self.environment_exists(env_name):
+            print(f"✗ Environment '{env_name}' does not exist")
             return False
         
-        env_file.unlink()
-        print(f"Deleted environment '{env_name}'")
-        return True
+        env_path = self.get_env_path(env_name)
+        
+        try:
+            # Remove directory
+            shutil.rmtree(env_path)
+            
+            # Update metadata
+            metadata = self._load_metadata()
+            if env_name in metadata['environments']:
+                del metadata['environments'][env_name]
+            self._save_metadata(metadata)
+            
+            print(f"✓ Environment '{env_name}' deleted")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Failed to delete environment: {e}")
+            return False
     
-    def show_environment(self, env_name: str) -> Optional[Dict]:
-        """
-        Show detailed information about an environment
+    def environment_exists(self, env_name: str) -> bool:
+        """Check if an environment exists"""
+        return self.get_env_path(env_name).exists()
+    
+    def list_environments(self) -> List[Dict]:
+        """List all environments"""
+        metadata = self._load_metadata()
+        envs = []
         
-        Args:
-            env_name: Name of the environment
+        for name, info in metadata.get('environments', {}).items():
+            env_path = Path(info['path'])
+            if env_path.exists():
+                envs.append({
+                    'name': name,
+                    'path': str(env_path),
+                    'python': info.get('python', 'unknown'),
+                    'exists': True
+                })
+            else:
+                envs.append({
+                    'name': name,
+                    'path': str(env_path),
+                    'python': info.get('python', 'unknown'),
+                    'exists': False
+                })
         
-        Returns:
-            Environment configuration or None if not found
-        """
-        env_file = self.envs_path / f"{env_name}.json"
-        
-        if not env_file.exists():
+        return envs
+    
+    def get_env_info(self, env_name: str) -> Optional[Dict]:
+        """Get detailed information about an environment"""
+        if not self.environment_exists(env_name):
             return None
         
-        with open(env_file, 'r') as f:
-            return json.load(f)
+        metadata = self._load_metadata()
+        env_info = metadata['environments'].get(env_name, {})
+        env_path = self.get_env_path(env_name)
+        
+        # Get Python executable
+        if sys.platform == 'win32':
+            python_exe = env_path / 'Scripts' / 'python.exe'
+        else:
+            python_exe = env_path / 'bin' / 'python'
+        
+        # Get installed packages
+        packages = []
+        if python_exe.exists():
+            try:
+                result = subprocess.run(
+                    [str(python_exe), '-m', 'pip', 'list', '--format=json'],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0:
+                    packages = json.loads(result.stdout)
+            except Exception:
+                pass
+        
+        return {
+            'name': env_name,
+            'path': str(env_path),
+            'python': str(python_exe),
+            'packages': packages,
+            'package_count': len(packages)
+        }
+    
+    def get_activation_command(self, env_name: str) -> str:
+        """Get the command to activate an environment"""
+        if not self.environment_exists(env_name):
+            return f"Environment '{env_name}' does not exist"
+        
+        env_path = self.get_env_path(env_name)
+        
+        if sys.platform == 'win32':
+            # Windows
+            return f"{env_path}\\Scripts\\Activate.ps1"
+        else:
+            # Unix-like
+            return f"source {env_path}/bin/activate"
