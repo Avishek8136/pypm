@@ -1,6 +1,7 @@
 # PyPM - Python Package Manager
 
 **Production-ready package manager with true multi-version support** - Tested with TensorFlow, handles complex dependencies perfectly!
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/pypm-manager?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/pypm-manager)
 
 ## 🚀 Quick Start
 
